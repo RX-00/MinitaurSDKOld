@@ -1,9 +1,12 @@
-/**
- * Copyright (C) Ghost Robotics - All Rights Reserved
- * Unauthorized copying of this file, via any medium is strictly prohibited
- * Proprietary and confidential
- * Written by Avik De and Turner Topping <avik@ghostrobotics.io> <turner@ghostrobotics.io>
- */
+/*****************************************************************
+ * Dissambled Minitaur (old) leg for testing as a monopod
+ *
+ * TODO: test if the motions are consistent and repeatable and that
+ * the default board can handle it all
+ *
+ * TODO: figure out our fudge factors for zeroing the motor(s)
+ *****************************************************************/
+
 #include <stdio.h>
 #include <SDK.h>
 #include <math.h>
@@ -39,24 +42,31 @@ public:
 	bool unitUpdated;
 
 	//Maximum difference between commanded and actual leg extension
-	const float maxDeltaExtCmd = 0.002; 
+	const float maxDeltaExtCmd = 0.002;
 	const float kExtAnimRate = 0.002; //Maximum rate (in m/s) of change in cmdExt
 
 	//sig is mapped from remote; here, 3 corresponds to pushing the left stick to the right
 	// which in turn forces the state machine into FH_LEAP
 	void signal(uint32_t sig) {
+    // NOTE: We don't have the remote controller set up so let's just force it into LEAP?
 		if (sig == 3) {
 			mode = FH_PRELEAP;
 			tLast = S->millis;
 		}
 	}
 
+  // NOTE: We don't have the remote controller set up so let's just force it into LEAP?
+  void signal(){
+    mode = FH_PRELEAP;
+    tLast = S->millis;
+  }
+
 
 	void begin() {
 		mode = FH_STAND; // Start behavior in STAND mode
 		tLast = S->millis; // Record the system time @ this transition
 		exCmd = 0.14; //Set extension command to be 0.14m, the current value of extension
-		lastExtension = 0.14; // Record the previous loop's extension; it should be 0.14m 
+		lastExtension = 0.14; // Record the previous loop's extension; it should be 0.14m
 	}
 
 	void update() {
@@ -70,7 +80,11 @@ public:
 				// and aft-displacement of rear legs)
 				// The pitch angle (S->imu.euler.y) is subtracted since we want to the set the *absolute* leg angle
 				// and limb[i].setPosition(ANGLE, *) will set the angle of the leg *relative* to the robot body
-				angDes = (isFront(i)) ? -S->imu.euler.y - 0.1 : -S->imu.euler.y + 0.2;
+				//angDes = (isFront(i)) ? -S->imu.euler.y - 0.1 : -S->imu.euler.y + 0.2;
+
+        //NOTE: Since this will just be a monopod can't we just assume it is already perfectly "relative" to the robot body i.e. 0? I hope this works
+        angDes = 0;
+
 				limb[i].setGain(ANGLE, 0.8, .03);
 				limb[i].setPosition(ANGLE, angDes);
 
@@ -84,12 +98,18 @@ public:
 			// C->behavior.pose.position.z can be commanded from the joystick (the left vertical axis by default)
 			// We map this using map() to the desired leg extension, so that the joystick can be used to raise
 			// and lower the standing height between 0.12 and 0.25 m
-			extDes = map(C->behavior.pose.position.z, -1.0, 1.0, 0.10, 0.25);
-			//If the commanded position is significantly lower than actual position,
+			//extDes = map(C->behavior.pose.position.z, -1.0, 1.0, 0.10, 0.25);
+
+      //NOTE: Not super sure how to set the z position manually besides trial and error
+      extDes = map(0.23, -1.0, 1.0, 0.10, 0.25);
+      //NOTE: That 0.23 for the z position was a really rough measurement of the physical leg with the
+      //      top bar linkages parallel-ish to the ground
+
+      //If the commanded position is significantly lower than actual position,
 			// and the behavior has just switched from SIT to STAND, then we smoothly
 			// interpolate commanded positions between the last extension and the desired
 			// extension, at the rate set by kExtAnimRate. This prevents the robot from
-			// falling to quickly.  
+			// falling too quickly.
 			if (S->millis - tLast < 250 && exCmd < extDes) {
 				exCmd = exCmd + (extDes - lastExtension) * kExtAnimRate;
 			} else {
@@ -109,7 +129,11 @@ public:
 			for (int i = 0; i < P->limbs_count; ++i) {
 				P->limbs[i].type = LimbParams_Type_SYMM5BAR_EXT_M;
 				// Leg splay
-				angDes = (isFront(i)) ? -S->imu.euler.y - 0.1 : -S->imu.euler.y + 0.2;
+				//angDes = (isFront(i)) ? -S->imu.euler.y - 0.1 : -S->imu.euler.y + 0.2;
+
+        // NOTE: assuming no leg splay on monopod
+        angDes = 0;
+
 				// Stiffen the angle gain linearly as a function of the extension
 				// This way, more torque is provided as the moment arm becomes longer.
 				limb[i].setGain(ANGLE, 1.2 + 0.2 * ((extDes - 0.12) / 0.13), 0.03);
@@ -128,7 +152,9 @@ public:
 				P->limbs[i].type = LimbParams_Type_SYMM5BAR_EXT_M;
 				limb[i].setGain(ANGLE, 1.5, 0.03);
 				limb[i].setGain(EXTENSION, 120, 4);
-				angDes = (isFront(i)) ? -S->imu.euler.y - 0.1 : -S->imu.euler.y + 0.2;
+				//angDes = (isFront(i)) ? -S->imu.euler.y - 0.1 : -S->imu.euler.y + 0.2;
+        // NOTE: assuming no leg splay on monopod
+        angDes = 0;
 				if(isFront(i)) {
 					limb[i].setPosition(ANGLE, angDes);
 					limb[i].setPosition(EXTENSION, 0.28);
@@ -137,7 +163,7 @@ public:
 					limb[i].setPosition(EXTENSION, 0.12);
 				}
 
-        
+
 				// After the mean leg angle passes 2.7 radians (note that we have changed the leg kinematics
 				// to LimbParams_Type_SYMM5BAR_EXT_RAD) for this case, switch into a different mode (LAND)
 				if (S->millis-tLast > 1000) {
@@ -161,8 +187,8 @@ public:
 					limb[i].setOpenLoop(EXTENSION, 3);
 					limb[i].setPosition(ANGLE, angDes);
 				}
-				
-				
+
+
 				// After the mean leg angle passes 2.7 radians (note that we have changed the leg kinematics
 				// to LimbParams_Type_SYMM5BAR_EXT_RAD) for this case, switch into a different mode (LAND)
 				if (limb[i].getPosition(EXTENSION) > 3 || S->millis - tLast >=500) {
@@ -174,15 +200,18 @@ public:
 		} else if (mode == FH_WAIT_FOR_UPRIGHT) {
 
 			for (int i = 0; i < P->limbs_count; ++i) {
-				
+
 				// This updates the parameters struct to switch back into meters as its units.
 				P->limbs[i].type = LimbParams_Type_SYMM5BAR_EXT_M;
 				// Sets the commanded length for landing to 0.25 meters
 				exCmd = (i==0 || i ==2) ? 0.11 : 0.25;
 				// Sets the desired leg angle to be facing downward plus a leg splay in the front
-				// and back. 
-				angDes = (i==0 || i ==2) ?  -S->imu.euler.y : S->imu.euler.y;
-				
+				// and back.
+				//angDes = (i==0 || i ==2) ?  -S->imu.euler.y : S->imu.euler.y;
+
+        // NOTE: assuming no leg splay on monopod
+        angDes = 0;
+
 				limb[i].setGain(ANGLE, 1.2, 0.03);
 				limb[i].setPosition(ANGLE, angDes);
 
@@ -190,9 +219,9 @@ public:
 				limb[i].setPosition(EXTENSION, exCmd);
 
 				// Use Limb::getForce for touchdown detection, and set a 20 millisecond
-				// grace period so that the legs can settle to their landing extension, 
-				// without their inertia triggering a false positive. 
-			
+				// grace period so that the legs can settle to their landing extension,
+				// without their inertia triggering a false positive.
+
 				if (limb[0].getPosition(ANGLE) <= -1.4 || S->millis - tLast >=500) {
 					mode = FH_JUMP_UP;
 					tLast = S->millis;
@@ -222,8 +251,12 @@ public:
 				P->limbs[i].type = LimbParams_Type_SYMM5BAR_EXT_RAD;
 				// Use setOpenLoop to exert the highest possible vertical force
 				limb[i].setGain(ANGLE, 1.0, 0.03);
-				angDes = (i==0 || i == 2) ? -S->imu.euler.y - 0.1 : -S->imu.euler.y+PI;
-				if(i==1 || i ==3)
+				//angDes = (i==0 || i == 2) ? -S->imu.euler.y - 0.1 : -S->imu.euler.y+PI;
+
+        // NOTE: assuming no leg splay on monopod
+        angDes = 0;
+
+        if(i==1 || i ==3)
 				{
 					limb[i].setGain(EXTENSION, 0.4, 0.01);
 					limb[i].setPosition(EXTENSION, 2.8);
@@ -234,8 +267,8 @@ public:
 					limb[i].setOpenLoop(EXTENSION, 2);
 					limb[i].setPosition(ANGLE, angDes);
 				}
-				
-				
+
+
 				// After the mean leg angle passes 2.7 radians (note that we have changed the leg kinematics
 				// to LimbParams_Type_SYMM5BAR_EXT_RAD) for this case, switch into a different mode (LAND)
 				if (limb[i].getPosition(EXTENSION) > 3  || S->millis - tLast >=250) {
@@ -247,14 +280,16 @@ public:
 		} else if (mode == FH_ABSORB) {
 
 			for (int i = 0; i < P->limbs_count; ++i) {
-				
+
 				// This updates the parameters struct to switch back into meters as its units.
 				P->limbs[i].type = LimbParams_Type_SYMM5BAR_EXT_M;
 				// Sets the commanded length for landing to 0.25 meters
 				exCmd = 0.25;
 				// Sets the desired leg angle to be facing downward plus a leg splay in the front
-				// and back. 
-				angDes = (i==0 || i == 2) ?  -S->imu.euler.y - 0.1 : S->imu.euler.y + 0.4;
+				// and back.
+				//angDes = (i==0 || i == 2) ?  -S->imu.euler.y - 0.1 : S->imu.euler.y + 0.4;
+        // NOTE: assuming no leg splay on monopod
+        angDes = 0;
 				extDes = (i==0 || i == 2) ?  0.25 : 0.2;
 
 				limb[i].setGain(ANGLE, 2, 0.03);
@@ -267,7 +302,6 @@ public:
 					limb[i].setGain(EXTENSION, 150, 3);
 					limb[i].setPosition(EXTENSION, exCmd);
 				}
-				
 
 				if (S->millis-tLast > 750) {
 					mode = FH_STAND;
@@ -299,7 +333,7 @@ int main(int argc, char *argv[]) {
 	init(RobotParams_Type_MINITAUR, argc, argv);
 	for (int i = 0; i < P->joints_count; ++i)
 		P->joints[i].zero = motZeros[i]; //Add motor zeros from array at beginning of file
-	
+
 	// Add our behavior to the behavior vector (Walk and Bound are already there)
 	behaviors.push_back(&firstHop); 
 
